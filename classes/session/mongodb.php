@@ -1,4 +1,5 @@
-<?php defined('SYSPATH') or die('No direct script access.');
+<?php defined('SYSPATH') OR die('No direct script access.');
+
 /**
  * MongoDB-based session class.
  *
@@ -8,222 +9,236 @@
  */
 class Session_Mongodb extends Session {
 
-	// Mongo host
-	protected $_host = 'localhost';
+    // Mongo host
+    protected $_host = 'localhost';
 
-	// Mongo port
-	protected $_port = 27017;
+    // Mongo port
+    protected $_port = 27017;
 
-	// Database name
-	protected $_db = 'sessions';
+    // Database name
+    protected $_db = 'sessions';
 
-	// Collection name
-	protected $_collection = 'sessions';
+    // Collection name
+    protected $_collection = 'sessions';
 
-	// Collection field names
-	protected $_columns = array(
-		'session_id'  => 'session_id',
-		'last_active' => 'last_active',
-		'contents'    => 'contents'
-	);
+    // Collection field names
+    protected $_columns = array(
+        'session_id'  => 'session_id',
+        'last_active' => 'last_active',
+        'contents'    => 'contents'
+    );
 
-	// Garbage collection requests
-	protected $_gc = 500;
+    // Garbage collection requests
+    protected $_gc = 500;
 
-	// The current session id
-	protected $_session_id;
+    // The current session id
+    protected $_session_id;
 
-	// The old session id
-	protected $_update_id;
+    // The old session id
+    protected $_update_id;
 
-	public function __construct(array $config = NULL, $id = NULL)
-	{
-		if (isset($config['host']))
-		{
-			// Set the mongo host
-			$this->_host = (string) $config['host'];
-		}
+    public function __construct(array $config = NULL, $id = NULL)
+    {
+        if (isset($config['host']))
+        {
+            // Set the mongo host
+            $this->_host = (string) $config['host'];
+        }
 
-		if (isset($config['port']))
-		{
-			// Set the mongo port
-			$this->_port = (int) $config['port'];
-		}
+        if (isset($config['port']))
+        {
+            // Set the mongo port
+            $this->_port = (int) $config['port'];
+        }
 
-		if (isset($config['database']))
-		{
-			// Set the database name
-			$this->_database = (string) $config['database'];
-		}
+        if (isset($config['user']))
+        {
+            $this->_user = $config['user'];
+        }
 
-		if (isset($config['collection']))
-		{
-			// Set the collection name
-			$this->_collection = (string) $config['collection'];
-		}
+        if (isset($config['password']))
+        {
+            $this->_password = $config['password'];
+        }
 
-		if (isset($config['gc']))
-		{
-			// Set the gc chance
-			$this->_gc = (int) $config['gc'];
-		}
+        if (isset($config['database']))
+        {
+            // Set the database name
+            $this->_database = (string) $config['database'];
+        }
 
-		if (isset($config['columns']))
-		{
-			// Overload column names
-			$this->_columns = $config['columns'];
-		}
+        if (isset($config['collection']))
+        {
+            // Set the collection name
+            $this->_collection = (string) $config['collection'];
+        }
 
-		if (!class_exists('Mongo'))
-		{
-			throw new Kohana_Exception('Mongo class is not exists!');
-		}
+        if (isset($config['gc']))
+        {
+            // Set the gc chance
+            $this->_gc = (int) $config['gc'];
+        }
 
-		// Connect to Mongo server
-		$mongo = new Mongo($this->_host . ':' . $this->_port);
+        if (isset($config['columns']))
+        {
+            // Overload column names
+            $this->_columns = $config['columns'];
+        }
 
-		// Select database and collection
-		$this->_db = $mongo->selectDB($this->_db);
+        if ( ! class_exists('MongoDB\Client'))
+        {
+            throw new Kohana_Exception('Mongo class is not exists!');
+        }
 
-		$this->_collection = $this->_db->selectCollection($this->_collection);
+        // Connect to Mongo server
 
-		parent::__construct($config, $id);
+        $mongo = new MongoDB\Client('mongodb://'.$this->_host . ':' . $this->_port);
 
-		if (mt_rand(0, $this->_gc) === $this->_gc)
-		{
-			// Run garbage collection
-			// This will average out to run once every X requests
-			$this->_gc();
-		}
+        // Select database and collection
+        $this->_db = $mongo->selectDatabase($this->_db);
 
-	}
+        $this->_collection = $this->_db->selectCollection($this->_collection);
 
-	public function id()
-	{
-		return $this->_session_id;
-	}
+        parent::__construct($config, $id);
 
-	protected function _read($id = NULL)
-	{
-		if ($id OR $id = Cookie::get($this->_name))
-		{
-			$object = $this->_collection
-				->findOne(array($this->_columns['session_id'] => $id));
+        if (mt_rand(0, $this->_gc) === $this->_gc)
+        {
+            // Run garbage collection
+            // This will average out to run once every X requests
+            $this->_gc();
+        }
 
-			if (count($object))
-			{
-				// Set the current session id
-				$this->_session_id = $this->_update_id = $id;
-				
-				// Return the contents
-				return $object[$this->_columns['contents']];
-			}
-		}
+    }
 
-		// Create a new session id
-		$this->_regenerate();
+    public function id()
+    {
+        return $this->_session_id;
+    }
 
-		return NULL;
-	}
+    protected function _read($id = NULL)
+    {
+        if ($id OR $id = Cookie::get($this->_name, NULL, FALSE))
+        {
+            $object = $this->_collection
+                ->findOne(array($this->_columns['session_id'] => $id));
 
-	protected function _regenerate()
-	{
-		do
-		{
-			// Create a new session id
-			$id = str_replace('.', '-', uniqid(NULL, TRUE));
+            if (count($object))
+            {
+                // Set the current session id
+                $this->_session_id = $this->_update_id = $id;
+                // Return the contents
+                return $object[$this->_columns['contents']];
+            }
+        }
 
-			// Get the the id from the database
-			$object = $this->_collection
-				->findOne(array($this->_columns['session_id'] => $id));
-		}
-		while (count($object));
+        // Create a new session id
+        $this->_regenerate();
 
-		return $this->_session_id = $id;
-	}
+        return NULL;
+    }
 
-	protected function _write()
-	{
-		$object = array(
-			$this->_columns['session_id']  => $this->_session_id,
-			$this->_columns['last_active'] => $this->_data['last_active'],
-			$this->_columns['contents']    => $this->__toString()
-		);
+    protected function _regenerate()
+    {
+        do
+        {
+            // Create a new session id
+            $id = str_replace('.', '-', uniqid(NULL, TRUE));
 
-		if ($this->_update_id === NULL)
-		{
-			// Insert a new object
-			if ( ! $this->_collection->insert($object))
-			{
-				throw new Kohana_Exception('Cannot create new session record (:error)', array(':error' => $this->_db->lastError()));
-			}
-		}
-		else
-		{
-			if ($this->_update_id !== $this->_session_id)
-			{
-				// Also update the session id
-				$object[$this->_columns['session_id']] = $this->_session_id;
-			}
+            // Get the the id from the database
+            $object = $this->_collection
+                ->findOne(array($this->_columns['session_id'] => $id));
+        }
+        while (count($object));
 
-			// Update the row
-			if ( ! $this->_collection->update(array($this->_columns['session_id'] => $this->_update_id), $object))
-			{
-				throw new Kohana_Exception('Cannot update session record (:error)', array(':error' => $this->_db->lastError()));
-			}
-		}
+        return $this->_session_id = $id;
+    }
 
-		// The update and the session id are now the same
-		$this->_update_id = $this->_session_id;
+    protected function _write()
+    {
+        $object = array(
+            $this->_columns['session_id']  => $this->_session_id,
+            $this->_columns['last_active'] => $this->_data['last_active'],
+            $this->_columns['contents']    => $this->__toString()
+        );
 
-		// Update the cookie with the new session id
-		Cookie::set($this->_name, $this->_session_id, $this->_lifetime);
+        if ($this->_update_id === NULL)
+        {
+            // Insert a new object
+            if ( ! $this->_collection->insertOne($object))
+            {
+                throw new Kohana_Exception('Cannot create new session record (:error)', array(':error' => $this->_db->lastError()));
+            }
+        }
+        else
+        {
+            if ($this->_update_id !== $this->_session_id)
+            {
+                // Also update the session id
+                $object[$this->_columns['session_id']] = $this->_session_id;
+            }
 
-		return TRUE;
-	}
+            // Update the row
+            if ( ! $this->_collection->replaceOne(array($this->_columns['session_id'] => $this->_update_id), $object))
+            {
+                throw new Kohana_Exception('Cannot update session record (:error)', array(':error' => $this->_db->lastError()));
+            }
+        }
 
-	protected function _destroy()
-	{
-		if ($this->_update_id === NULL)
-		{
-			// Session has not been created yet
-			return TRUE;
-		}
+        // The update and the session id are now the same
+        $this->_update_id = $this->_session_id;
+        // Update the cookie with the new session id
+        Cookie::set($this->_name, $this->_session_id, $this->_lifetime, FALSE);
 
-		// Delete the current session
-		if ($this->_collection->remove(array($this->_columns['session_id'] => $this->_update_id)))
-		{
-			// Delete the cookie
-			Cookie::delete($this->_name);
-		}
-		else
-		{
-			// An error occurred, the session has not been deleted
-			throw new Kohana_Exception('Cannot destroy session (:error)', array(':error' => $this->_db->lastError()));
-		}
+        return TRUE;
+    }
 
-		return TRUE;
-	}
+    protected function _destroy()
+    {
+        if ($this->_update_id === NULL)
+        {
+            // Session has not been created yet
+            return TRUE;
+        }
 
-	protected function _gc()
-	{
-		if ($this->_lifetime)
-		{
-			// Expire sessions when their lifetime is up
-			$expires = $this->_lifetime;
-		}
-		else
-		{
-			// Expire sessions after one month
-			$expires = Date::MONTH;
-		}
+        // Delete the current session
+        if ($this->_collection->deleteOne(array($this->_columns['session_id'] => $this->_update_id)))
+        {
+            // Delete the cookie
+            Cookie::delete($this->_name);
+        }
+        else
+        {
+            // An error occurred, the session has not been deleted
+            throw new Kohana_Exception('Cannot destroy session (:error)', array(':error' => $this->_db->lastError()));
+        }
 
-		$expired = __('this.:column < :time', array(':column' => $this->_columns['last_active'], ':time' => (time() - $expires)));
+        return TRUE;
+    }
 
-		if ( ! $this->_collection->remove(array('$where' => $expired)))
-		{
-			throw new Kohana_Exception('Cannot delete old sessions (:error)', array(':error' => $this->_db->lastError()));
-		}
-	}
+    protected function _gc()
+    {
+        if ($this->_lifetime)
+        {
+            // Expire sessions when their lifetime is up
+            $expires = $this->_lifetime;
+        }
+        else
+        {
+            // Expire sessions after one month
+            $expires = Date::MONTH;
+        }
+
+        $expired = __('this.:column < :time', array(':column' => $this->_columns['last_active'], ':time' => (time() - $expires)));
+
+        if ( ! $this->_collection->deleteMany(array('$where' => $expired)))
+        {
+            throw new Kohana_Exception('Cannot delete old sessions (:error)', array(':error' => $this->_db->lastError()));
+        }
+    }
+
+    protected function _restart()
+    {
+        throw new Exception('Session driver MongoDB restart does not supported.');
+    }
 
 } // End Session_Mongodb
